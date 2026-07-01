@@ -254,6 +254,19 @@ input[type=file]{display:none;}
   border:none;color:var(--text);font-size:16px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
+.dv-search-bar{
+  display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--divider);
+  background:rgba(0,0,0,0.15);flex-shrink:0;
+}
+.dv-search-bar input{
+  flex:1;background:var(--card);border:1px solid var(--divider);border-radius:8px;
+  padding:7px 10px;color:var(--text);font-size:13px;
+}
+.dv-search-bar input:focus{outline:none;border-color:var(--mint);}
+.dv-search-bar button{
+  background:var(--purple);border:none;border-radius:8px;color:#fff;
+  padding:0 14px;font-size:14px;cursor:pointer;flex-shrink:0;
+}
 .dv-list{flex:1;overflow-y:auto;padding:6px 10px;-webkit-overflow-scrolling:touch;}
 .dv-loading{padding:24px;text-align:center;color:var(--muted);font-size:12px;}
 .dv-row{
@@ -355,6 +368,10 @@ input[type=file]{display:none;}
     <button class="dv-nav-btn" id="dv-back-btn" onclick="driveGoBack()">‹ 戻る</button>
     <span class="dv-path" id="dv-path">マイドライブ</span>
     <button class="dv-close" onclick="closeDriveBrowser()">✕</button>
+  </div>
+  <div class="dv-search-bar">
+    <input type="text" id="dv-search-input" placeholder="フォルダ名で検索（例: Text2Img）">
+    <button onclick="driveSearch()">検索</button>
   </div>
   <div class="dv-list" id="dv-list"></div>
   <div class="dv-bottom">
@@ -665,6 +682,7 @@ function driveGoBack(){
 }
 
 async function loadDriveFolder(){
+  document.getElementById('dv-search-input').value = '';
   document.getElementById('dv-path').textContent = driveCurrent.name;
   document.getElementById('dv-back-btn').disabled = driveStack.length === 0;
   const list = document.getElementById('dv-list');
@@ -718,6 +736,46 @@ function renderDriveList(items){
     list.appendChild(row);
   });
   updateDriveCounter();
+}
+
+document.getElementById('dv-search-input').addEventListener('keydown', e => {
+  if(e.key === 'Enter') driveSearch();
+});
+
+async function driveSearch(){
+  const q = document.getElementById('dv-search-input').value.trim();
+  if(!q) return;
+  const list = document.getElementById('dv-list');
+  list.innerHTML = '<div class="dv-loading">検索中...</div>';
+  document.getElementById('dv-path').textContent = '検索: ' + q;
+  try{
+    const query = encodeURIComponent(`name contains '${q.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=50&corpora=allDrives&includeItemsFromAllDrives=true&supportsAllDrives=true`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if(!res.ok) throw new Error('search failed');
+    const json = await res.json();
+    renderDriveSearchResults(json.files || []);
+  }catch(e){
+    list.innerHTML = '<div class="dv-loading">検索に失敗しました</div>';
+  }
+}
+
+function renderDriveSearchResults(items){
+  const list = document.getElementById('dv-list');
+  list.innerHTML = '';
+  if(!items.length){ list.innerHTML = '<div class="dv-loading">見つかりませんでした</div>'; return; }
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'dv-row';
+    row.innerHTML = `<div class="dv-icon">📁</div><div class="dv-name">${item.name}</div><div class="dv-arrow">›</div>`;
+    row.addEventListener('click', () => {
+      driveStack.push(driveCurrent);
+      driveCurrent = { id: item.id, name: item.name };
+      loadDriveFolder();
+    });
+    list.appendChild(row);
+  });
 }
 
 async function fetchDriveThumb(url){
