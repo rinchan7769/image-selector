@@ -242,6 +242,10 @@ input[type=file]{display:none;}
       追加
     </label>
     <input type="file" id="fi" multiple accept="image/*">
+    <button class="add-btn" id="gdrive-btn" onclick="openDrivePicker()" style="background:var(--mint);color:#071a10;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15l4-8h8l4 8M4 15l4 6h8l4-6M4 15h16"/></svg>
+      Drive
+    </button>
   </div>
 
   <div class="split">
@@ -291,7 +295,13 @@ input[type=file]{display:none;}
   </div>
 </div>
 
+<script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
+<script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" async defer></script>
 <script>
+
+const GOOGLE_CLIENT_ID = '915191077344-a2nb12sektqe2n8v0d67pd1hjuhteh3u.apps.googleusercontent.com';
+const GOOGLE_API_KEY = 'AIzaSyB6QyRYMzdlZhxIGf15p0K9i3WofLrUNyI';
+const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 let images = [];
 let selected = [];
@@ -544,6 +554,72 @@ function toast(msg){
   el.textContent = msg; el.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('on'), 1800);
+}
+
+/* ── GOOGLE DRIVE PICKER ── */
+let tokenClient = null;
+let accessToken = null;
+let gisReady = false;
+let pickerReady = false;
+
+function gisLoaded(){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GOOGLE_DRIVE_SCOPE,
+    callback: '',
+  });
+  gisReady = true;
+}
+function gapiLoaded(){
+  gapi.load('picker', () => { pickerReady = true; });
+}
+
+function openDrivePicker(){
+  if(!gisReady || !pickerReady){ toast('読み込み中です。少し待って再度お試しください'); return; }
+  tokenClient.callback = (resp) => {
+    if(resp.error){ toast('Google認証に失敗しました'); return; }
+    accessToken = resp.access_token;
+    showDrivePicker();
+  };
+  tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
+}
+
+function showDrivePicker(){
+  const view = new google.picker.DocsView(google.picker.ViewId.DOCS_IMAGES)
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(false);
+  new google.picker.PickerBuilder()
+    .addView(view)
+    .setOAuthToken(accessToken)
+    .setDeveloperKey(GOOGLE_API_KEY)
+    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    .setCallback(pickerCallback)
+    .build()
+    .setVisible(true);
+}
+
+async function pickerCallback(data){
+  if(data.action !== google.picker.Action.PICKED) return;
+  toast('読み込み中...');
+  const docs = data.docs;
+  const loaded = await Promise.all(docs.map(doc => fetchDriveFile(doc)));
+  images.push(...loaded.filter(Boolean));
+  render();
+  toast(loaded.filter(Boolean).length + '枚追加しました');
+}
+
+async function fetchDriveFile(doc){
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if(!res.ok) throw new Error('drive fetch failed');
+    const blob = await res.blob();
+    return { id: Math.random().toString(36).slice(2), url: URL.createObjectURL(blob), file: blob, name: doc.name };
+  }catch(e){
+    toast(doc.name + ' の読み込みに失敗しました');
+    return null;
+  }
 }
 
 /* ── SERVICE WORKER ── */
