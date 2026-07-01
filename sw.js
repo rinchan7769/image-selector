@@ -1,9 +1,8 @@
-const CACHE = 'image-selector-v1';
+const CACHE = 'image-selector-v2';
 const ASSETS = [
   '.',
   'index.html',
-  'manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+  'manifest.json'
 ];
 
 self.addEventListener('install', e => {

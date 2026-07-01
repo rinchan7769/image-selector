@@ -193,6 +193,42 @@ html,body{
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
 
 input[type=file]{display:none;}
+
+/* PREVIEW MODAL */
+.preview-modal{
+  position:fixed;inset:0;z-index:10000;
+  background:rgba(5,5,8,0.96);
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  padding-top:var(--safe-top);padding-bottom:var(--safe-bottom);
+}
+.preview-modal.on{display:flex;}
+.pv-close{
+  position:absolute;top:calc(14px + var(--safe-top));right:14px;
+  width:36px;height:36px;border-radius:50%;
+  background:rgba(255,255,255,0.08);border:none;color:var(--text);
+  font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.pv-nav{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:44px;height:64px;border-radius:10px;
+  background:rgba(255,255,255,0.06);border:none;color:var(--text);
+  font-size:26px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.pv-nav:disabled{opacity:0.2;}
+.pv-prev{left:8px;}
+.pv-next{right:8px;}
+.pv-img-wrap{flex:1;display:flex;align-items:center;justify-content:center;width:100%;min-height:0;padding:0 60px;}
+#pv-img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;}
+.pv-bottom{
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:14px 20px calc(18px + var(--safe-bottom));width:100%;
+}
+.pv-counter{font-size:12px;color:var(--muted);}
+.pv-select-btn{
+  background:var(--purple);color:#fff;border:none;border-radius:10px;
+  padding:11px 28px;font-size:13px;font-weight:700;cursor:pointer;
+}
+.pv-select-btn.sel{background:var(--mint);color:#071a10;}
 </style>
 </head>
 <body>
@@ -238,14 +274,25 @@ input[type=file]{display:none;}
     </button>
     <button class="dl-btn" id="dl-btn" onclick="doDownload()" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      ZIPダウンロード
+      ダウンロード
     </button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<div class="preview-modal" id="preview-modal">
+  <button class="pv-close" onclick="closePreview()">✕</button>
+  <button class="pv-nav pv-prev" id="pv-prev" onclick="prevPreview()">‹</button>
+  <div class="pv-img-wrap"><img id="pv-img" src=""></div>
+  <button class="pv-nav pv-next" id="pv-next" onclick="nextPreview()">›</button>
+  <div class="pv-bottom">
+    <span class="pv-counter" id="pv-counter"></span>
+    <button class="pv-select-btn" id="pv-select-btn" onclick="togglePreviewSel()">選別に追加</button>
+  </div>
+</div>
+
 <script>
+
 let images = [];
 let selected = [];
 let ghost = null;
@@ -308,7 +355,8 @@ function createThumb(img, isSel, inSel, seqNum){
     ${seqNum !== undefined ? `<div class="seq-badge">${String(seqNum).padStart(3,'0')}</div>` : ''}
   `;
   if(!inSel){
-    div.addEventListener('click', e => { if(dragMoved) return; toggleSel(img.id); });
+    div.querySelector('img').addEventListener('click', e => { if(dragMoved) return; openPreview(img.id); });
+    div.querySelector('.chk').addEventListener('click', e => { e.stopPropagation(); toggleSel(img.id); });
     div.addEventListener('touchstart', e => onTouchStart(e, img.id), {passive:true});
     div.addEventListener('touchmove',  e => onTouchMove(e),  {passive:false});
     div.addEventListener('touchend',   e => onTouchEnd(e),   {passive:true});
@@ -438,25 +486,55 @@ document.getElementById('fi').addEventListener('change', e => { loadFiles(e.targ
 /* ── DOWNLOAD ── */
 async function doDownload(){
   const btn = document.getElementById('dl-btn');
-  btn.disabled = true; btn.textContent = '準備中...';
-  const zip   = new JSZip();
+  btn.disabled = true; btn.textContent = '保存中...';
   const start = getStart();
   for(let i = 0; i < selected.length; i++){
     const img = images.find(x => x.id === selected[i]);
     if(!img) continue;
     const ext = img.name.split('.').pop() || 'jpg';
     const num = String(start + i).padStart(3, '0');
-    const res  = await fetch(img.url);
-    const blob = await res.blob();
-    zip.file(`${num}.${ext}`, blob);
+    const a = document.createElement('a');
+    a.href = img.url;
+    a.download = `${num}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    await new Promise(r => setTimeout(r, 300));
   }
-  const content = await zip.generateAsync({type:'blob'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(content);
-  a.download = 'selected_images.zip';
-  a.click();
   btn.disabled = false;
-  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#071a10" stroke-width="2.5" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ZIPダウンロード`;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#071a10" stroke-width="2.5" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ダウンロード`;
+}
+
+/* ── PREVIEW ── */
+let previewIndex = -1;
+function openPreview(id){
+  previewIndex = images.findIndex(x => x.id === id);
+  if(previewIndex < 0) return;
+  showPreview();
+  document.getElementById('preview-modal').classList.add('on');
+}
+function closePreview(){
+  document.getElementById('preview-modal').classList.remove('on');
+}
+function showPreview(){
+  const img = images[previewIndex];
+  if(!img) return;
+  document.getElementById('pv-img').src = img.url;
+  document.getElementById('pv-counter').textContent = (previewIndex + 1) + ' / ' + images.length;
+  document.getElementById('pv-prev').disabled = previewIndex <= 0;
+  document.getElementById('pv-next').disabled = previewIndex >= images.length - 1;
+  const isSel = selected.includes(img.id);
+  const btn = document.getElementById('pv-select-btn');
+  btn.textContent = isSel ? '選別から除外' : '選別に追加';
+  btn.classList.toggle('sel', isSel);
+}
+function prevPreview(){ if(previewIndex > 0){ previewIndex--; showPreview(); } }
+function nextPreview(){ if(previewIndex < images.length - 1){ previewIndex++; showPreview(); } }
+function togglePreviewSel(){
+  const img = images[previewIndex];
+  if(!img) return;
+  toggleSel(img.id);
+  showPreview();
 }
 
 /* ── TOAST ── */
