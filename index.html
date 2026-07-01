@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="選別ツール">
+<meta name="theme-color" content="#0d0d10">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>画像選別ツール</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;}
+:root{
+  --bg:#0d0d10;
+  --panel-l:#13131e;
+  --panel-r:#0f1a16;
+  --card:#1c1c2e;
+  --mint:#3de8a0;
+  --mint-dim:rgba(61,232,160,0.1);
+  --mint-border:rgba(61,232,160,0.25);
+  --purple:#9b6dff;
+  --purple-dim:rgba(155,109,255,0.12);
+  --text:#ddd6f8;
+  --muted:#6a6285;
+  --divider:rgba(255,255,255,0.07);
+  --safe-top:env(safe-area-inset-top, 0px);
+  --safe-bottom:env(safe-area-inset-bottom, 0px);
+}
+html,body{
+  height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,'Hiragino Sans',sans-serif;
+  overflow:hidden;overscroll-behavior:none;
+}
+#app{
+  display:flex;flex-direction:column;
+  height:100dvh;
+  padding-top:var(--safe-top);
+  padding-bottom:var(--safe-bottom);
+  background:var(--bg);
+}
+
+/* TOP BAR */
+.topbar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 14px 8px;
+  background:rgba(13,13,16,0.96);
+  border-bottom:1px solid var(--divider);
+  flex-shrink:0;
+}
+.topbar-title{font-size:15px;font-weight:700;color:var(--text);flex:1;letter-spacing:0.3px;}
+.chip{
+  background:var(--purple-dim);color:var(--purple);
+  border:1px solid rgba(155,109,255,0.2);
+  border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;
+  white-space:nowrap;
+}
+.chip.m{background:var(--mint-dim);color:var(--mint);border-color:var(--mint-border);}
+.add-btn{
+  display:flex;align-items:center;gap:5px;
+  background:var(--purple);color:#fff;
+  border:none;border-radius:9px;padding:7px 12px;
+  font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
+}
+
+/* SPLIT */
+.split{display:flex;flex:1;overflow:hidden;}
+.pane{display:flex;flex-direction:column;overflow:hidden;}
+.pane-l{width:55%;border-right:1px solid var(--divider);background:var(--panel-l);}
+.pane-r{width:45%;background:var(--panel-r);}
+
+/* PANE HEADER */
+.pane-hdr{
+  padding:8px 10px;display:flex;align-items:center;gap:5px;
+  border-bottom:1px solid var(--divider);flex-shrink:0;
+  background:rgba(0,0,0,0.18);
+}
+.pane-label{font-size:11px;color:var(--muted);font-weight:500;flex:1;}
+.mini-btn{
+  font-size:10px;color:var(--muted);padding:3px 7px;
+  border:1px solid var(--divider);border-radius:6px;
+  background:transparent;cursor:pointer;white-space:nowrap;
+}
+
+/* GRIDS */
+.pool-grid{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:3px;padding:5px;overflow-y:auto;flex:1;
+  overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
+.sel-grid{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:3px;padding:5px;overflow-y:auto;flex:1;
+  overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
+.sel-grid.drag-over{
+  background:var(--mint-dim);
+  outline:2px dashed var(--mint);outline-offset:-3px;border-radius:6px;
+}
+
+/* THUMB */
+.thumb{
+  position:relative;aspect-ratio:3/4;border-radius:8px;overflow:hidden;
+  background:var(--card);border:2px solid transparent;
+  transition:border-color 0.12s;touch-action:none;user-select:none;
+}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;}
+.thumb.sel{border-color:var(--mint);}
+.chk{
+  position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;
+  border:2px solid rgba(255,255,255,0.3);background:rgba(0,0,0,0.3);
+  display:flex;align-items:center;justify-content:center;
+}
+.thumb.sel .chk{background:var(--mint);border-color:var(--mint);}
+.chk-icon{display:none;width:11px;height:11px;}
+.thumb.sel .chk-icon{display:block;}
+.seq-badge{
+  position:absolute;bottom:0;left:0;right:0;
+  background:rgba(0,0,0,0.72);
+  color:var(--mint);font-size:10px;font-weight:700;
+  text-align:center;padding:3px 0;letter-spacing:0.5px;
+}
+
+/* DRAG GHOST */
+.ghost{
+  position:fixed;pointer-events:none;z-index:9999;
+  width:72px;aspect-ratio:3/4;border-radius:8px;overflow:hidden;
+  border:2px solid var(--mint);opacity:0.88;
+  transform:scale(1.1);transition:none;
+}
+.ghost img{width:100%;height:100%;object-fit:cover;display:block;}
+
+/* EMPTY */
+.empty{
+  grid-column:1/-1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:8px;color:var(--muted);font-size:11px;text-align:center;
+  padding:24px 12px;min-height:120px;
+}
+.empty-icon{font-size:26px;opacity:0.5;}
+
+/* UPLOAD ZONE */
+.upload-zone{
+  grid-column:1/-1;margin:4px 0;
+  border:1.5px dashed rgba(155,109,255,0.3);
+  border-radius:10px;padding:24px 12px;text-align:center;cursor:pointer;
+  background:var(--purple-dim);
+}
+.upload-zone p{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5;}
+.upload-zone .uz-icon{font-size:26px;}
+
+/* BOTTOM BAR */
+.bottom-bar{
+  padding:10px 14px;
+  border-top:1px solid var(--divider);
+  background:rgba(13,13,16,0.97);
+  display:flex;gap:8px;align-items:center;flex-shrink:0;
+}
+.num-wrap{display:flex;align-items:center;gap:5px;flex-shrink:0;}
+.num-label{font-size:11px;color:var(--muted);}
+.num-input{
+  width:46px;background:var(--card);border:1px solid var(--divider);
+  border-radius:7px;color:var(--text);font-size:13px;font-weight:700;
+  padding:5px 6px;text-align:center;
+}
+.num-input:focus{outline:none;border-color:var(--mint);}
+.reset-btn{
+  width:38px;height:38px;border-radius:9px;flex-shrink:0;
+  border:1px solid rgba(255,90,90,0.2);background:rgba(255,90,90,0.07);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.reset-btn svg{width:15px;height:15px;stroke:#ff7070;}
+.reset-btn:disabled{opacity:0.25;}
+.dl-btn{
+  flex:1;background:var(--mint);color:#071a10;
+  border:none;border-radius:10px;padding:11px;
+  font-size:13px;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.dl-btn:disabled{opacity:0.25;cursor:default;}
+.dl-btn svg{width:14px;height:14px;stroke:#071a10;flex-shrink:0;}
+
+/* TOAST */
+.toast{
+  position:fixed;bottom:calc(80px + var(--safe-bottom));
+  left:50%;transform:translateX(-50%) translateY(8px);
+  background:#1a2e22;border:1px solid var(--mint-border);
+  color:var(--mint);padding:8px 18px;border-radius:20px;
+  font-size:12px;font-weight:500;opacity:0;
+  transition:opacity 0.2s,transform 0.2s;z-index:9998;white-space:nowrap;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+
+input[type=file]{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <span class="topbar-title">✦ 画像選別</span>
+    <span class="chip" id="c-total">0枚</span>
+    <span class="chip m" id="c-sel">選択0</span>
+    <label for="fi" class="add-btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      追加
+    </label>
+    <input type="file" id="fi" multiple accept="image/*">
+  </div>
+
+  <div class="split">
+    <div class="pane pane-l">
+      <div class="pane-hdr">
+        <span class="pane-label">📁 プール</span>
+        <button class="mini-btn" onclick="selAll()">全選択</button>
+        <button class="mini-btn" onclick="deselAll()">解除</button>
+      </div>
+      <div class="pool-grid" id="pool-grid"></div>
+    </div>
+    <div class="pane pane-r">
+      <div class="pane-hdr">
+        <span class="pane-label">✅ 選別済み</span>
+        <span style="font-size:10px;color:var(--muted);">長押→右ドラッグ</span>
+      </div>
+      <div class="sel-grid" id="sel-grid"></div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="num-wrap">
+      <span class="num-label">No.</span>
+      <input class="num-input" type="number" id="start-num" value="1" min="1" max="999">
+    </div>
+    <button class="reset-btn" id="reset-btn" onclick="resetSel()" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2">
+        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/>
+      </svg>
+    </button>
+    <button class="dl-btn" id="dl-btn" onclick="doDownload()" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      ZIPダウンロード
+    </button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+let images = [];
+let selected = [];
+let ghost = null;
+let draggingId = null;
+let dragStartX = 0, dragStartY = 0;
+let dragMoved = false;
+let longPressTimer = null;
+const LONG_PRESS_MS = 160;
+
+const poolGrid = document.getElementById('pool-grid');
+const selGrid  = document.getElementById('sel-grid');
+
+/* ── RENDER ── */
+function getStart(){ return parseInt(document.getElementById('start-num').value)||1; }
+
+function render(){ renderPool(); renderSel(); updateChips(); }
+
+function renderPool(){
+  poolGrid.innerHTML = '';
+  if(!images.length){
+    const wrap = document.createElement('div');
+    wrap.className = 'upload-zone';
+    wrap.innerHTML = `<div class="uz-icon">🖼️</div><p><strong style="color:var(--purple)">タップして画像を追加</strong><br>JPG・PNG・HEIC対応</p>`;
+    wrap.addEventListener('click', ()=> document.getElementById('fi').click());
+    poolGrid.appendChild(wrap);
+    return;
+  }
+  images.forEach(img => {
+    const isSel = selected.includes(img.id);
+    const el = createThumb(img, isSel, false);
+    poolGrid.appendChild(el);
+  });
+}
+
+function renderSel(){
+  selGrid.innerHTML = '';
+  if(!selected.length){
+    const el = document.createElement('div');
+    el.className = 'empty';
+    el.innerHTML = `<div class="empty-icon">👉</div><p>長押しして<br>ここへドラッグ</p>`;
+    selGrid.appendChild(el);
+    return;
+  }
+  const start = getStart();
+  selected.forEach((id, i) => {
+    const img = images.find(x => x.id === id);
+    if(!img) return;
+    const el = createThumb(img, true, true, start + i);
+    selGrid.appendChild(el);
+  });
+}
+
+function createThumb(img, isSel, inSel, seqNum){
+  const div = document.createElement('div');
+  div.className = 'thumb' + (isSel ? ' sel' : '');
+  div.dataset.id = img.id;
+  div.innerHTML = `
+    <img src="${img.url}" draggable="false" loading="lazy">
+    ${!inSel ? `<div class="chk"><svg class="chk-icon" viewBox="0 0 24 24" fill="none" stroke="#071a10" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>` : ''}
+    ${seqNum !== undefined ? `<div class="seq-badge">${String(seqNum).padStart(3,'0')}</div>` : ''}
+  `;
+  if(!inSel){
+    div.addEventListener('click', e => { if(dragMoved) return; toggleSel(img.id); });
+    div.addEventListener('touchstart', e => onTouchStart(e, img.id), {passive:true});
+    div.addEventListener('touchmove',  e => onTouchMove(e),  {passive:false});
+    div.addEventListener('touchend',   e => onTouchEnd(e),   {passive:true});
+    div.addEventListener('touchcancel',()=> cancelDrag(), {passive:true});
+    div.addEventListener('mousedown',  e => onMouseDown(e, img.id));
+  } else {
+    div.style.cursor = 'pointer';
+    div.addEventListener('click', () => { removeSel(img.id); toast('選別から除外しました'); });
+  }
+  return div;
+}
+
+function updateChips(){
+  document.getElementById('c-total').textContent = images.length + '枚';
+  document.getElementById('c-sel').textContent   = '選択' + selected.length;
+  const has = selected.length > 0;
+  document.getElementById('dl-btn').disabled    = !has;
+  document.getElementById('reset-btn').disabled = !has;
+}
+
+/* ── SELECT ── */
+function toggleSel(id){
+  if(selected.includes(id)){ removeSel(id); toast('除外しました'); }
+  else { selected.push(id); renderSel(); updateChips(); toast('選別に追加 ✓'); renderPool(); }
+}
+function removeSel(id){ selected = selected.filter(x => x !== id); render(); }
+function selAll(){ selected = images.map(x => x.id); render(); toast('全て選択しました'); }
+function deselAll(){ selected = []; render(); }
+function resetSel(){ selected = []; render(); toast('リセットしました'); }
+
+document.getElementById('start-num').addEventListener('input', () => renderSel());
+
+/* ── TOUCH DRAG ── */
+function onTouchStart(e, id){
+  dragMoved = false; draggingId = null;
+  const t = e.touches[0];
+  dragStartX = t.clientX; dragStartY = t.clientY;
+  longPressTimer = setTimeout(() => startDrag(id, t.clientX, t.clientY), LONG_PRESS_MS);
+}
+function onTouchMove(e){
+  const t = e.touches[0];
+  const dx = t.clientX - dragStartX, dy = t.clientY - dragStartY;
+  if(Math.abs(dx) > 5 || Math.abs(dy) > 5){
+    clearTimeout(longPressTimer);
+    if(draggingId){ e.preventDefault(); moveGhost(t.clientX, t.clientY); checkOver(t.clientX, t.clientY); }
+    else { dragMoved = true; }
+  }
+}
+function onTouchEnd(e){
+  clearTimeout(longPressTimer);
+  if(draggingId){ const t = e.changedTouches[0]; dropAt(t.clientX, t.clientY); }
+}
+
+/* ── MOUSE DRAG ── */
+function onMouseDown(e, id){
+  if(e.button !== 0) return;
+  dragMoved = false; draggingId = null;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  longPressTimer = setTimeout(() => startDrag(id, e.clientX, e.clientY), LONG_PRESS_MS);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+function onMouseMove(e){
+  const dx = e.clientX - dragStartX, dy = e.clientY - dragStartY;
+  if(Math.abs(dx) > 5 || Math.abs(dy) > 5){
+    clearTimeout(longPressTimer);
+    if(draggingId){ moveGhost(e.clientX, e.clientY); checkOver(e.clientX, e.clientY); }
+    else { dragMoved = true; }
+  }
+}
+function onMouseUp(e){
+  clearTimeout(longPressTimer);
+  window.removeEventListener('mousemove', onMouseMove);
+  window.removeEventListener('mouseup', onMouseUp);
+  if(draggingId) dropAt(e.clientX, e.clientY);
+}
+
+/* ── DRAG CORE ── */
+function startDrag(id, x, y){
+  draggingId = id; dragMoved = true;
+  const img = images.find(i => i.id === id);
+  if(!img) return;
+  ghost = document.createElement('div');
+  ghost.className = 'ghost';
+  ghost.innerHTML = `<img src="${img.url}">`;
+  ghost.style.left = (x - 36) + 'px';
+  ghost.style.top  = (y - 48) + 'px';
+  document.body.appendChild(ghost);
+  if(navigator.vibrate) navigator.vibrate(10);
+}
+function moveGhost(x, y){
+  if(!ghost) return;
+  ghost.style.left = (x - 36) + 'px';
+  ghost.style.top  = (y - 48) + 'px';
+}
+function checkOver(x, y){
+  const r = selGrid.getBoundingClientRect();
+  selGrid.classList.toggle('drag-over', x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+}
+function dropAt(x, y){
+  if(ghost){ ghost.remove(); ghost = null; }
+  selGrid.classList.remove('drag-over');
+  const r = selGrid.getBoundingClientRect();
+  const inRight = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  if(inRight && draggingId){
+    if(!selected.includes(draggingId)){ selected.push(draggingId); render(); toast('選別に追加 ✓'); }
+    else { toast('既に選別済みです'); }
+  }
+  draggingId = null; dragMoved = false;
+}
+function cancelDrag(){
+  clearTimeout(longPressTimer);
+  if(ghost){ ghost.remove(); ghost = null; }
+  selGrid.classList.remove('drag-over');
+  draggingId = null;
+}
+
+/* ── FILES ── */
+function loadFiles(files){
+  [...files].filter(f => f.type.startsWith('image/')).forEach(f => {
+    images.push({ id: Math.random().toString(36).slice(2), url: URL.createObjectURL(f), file: f, name: f.name });
+  });
+  render();
+}
+document.getElementById('fi').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
+
+/* ── DOWNLOAD ── */
+async function doDownload(){
+  const btn = document.getElementById('dl-btn');
+  btn.disabled = true; btn.textContent = '準備中...';
+  const zip   = new JSZip();
+  const start = getStart();
+  for(let i = 0; i < selected.length; i++){
+    const img = images.find(x => x.id === selected[i]);
+    if(!img) continue;
+    const ext = img.name.split('.').pop() || 'jpg';
+    const num = String(start + i).padStart(3, '0');
+    const res  = await fetch(img.url);
+    const blob = await res.blob();
+    zip.file(`${num}.${ext}`, blob);
+  }
+  const content = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = 'selected_images.zip';
+  a.click();
+  btn.disabled = false;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#071a10" stroke-width="2.5" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ZIPダウンロード`;
+}
+
+/* ── TOAST ── */
+let toastTimer;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 1800);
+}
+
+/* ── SERVICE WORKER ── */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+render();
+</script>
+</body>
+</html>
