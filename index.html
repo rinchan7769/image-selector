@@ -229,6 +229,61 @@ input[type=file]{display:none;}
   padding:11px 28px;font-size:13px;font-weight:700;cursor:pointer;
 }
 .pv-select-btn.sel{background:var(--mint);color:#071a10;}
+
+/* DRIVE BROWSER */
+.drive-modal{
+  position:fixed;inset:0;z-index:10001;
+  background:var(--bg);
+  display:none;flex-direction:column;
+  padding-top:var(--safe-top);padding-bottom:var(--safe-bottom);
+}
+.drive-modal.on{display:flex;}
+.dv-header{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 14px;border-bottom:1px solid var(--divider);
+  background:rgba(13,13,16,0.96);flex-shrink:0;
+}
+.dv-nav-btn{
+  background:transparent;border:none;color:var(--mint);
+  font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;padding:4px 2px;
+}
+.dv-nav-btn:disabled{opacity:0.25;}
+.dv-path{flex:1;font-size:13px;font-weight:700;color:var(--text);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dv-close{
+  width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.08);
+  border:none;color:var(--text);font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.dv-list{flex:1;overflow-y:auto;padding:6px 10px;-webkit-overflow-scrolling:touch;}
+.dv-loading{padding:24px;text-align:center;color:var(--muted);font-size:12px;}
+.dv-row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 8px;border-bottom:1px solid var(--divider);cursor:pointer;
+}
+.dv-icon{font-size:20px;width:32px;text-align:center;flex-shrink:0;}
+.dv-thumb{
+  width:40px;height:40px;border-radius:6px;overflow:hidden;background:var(--card);flex-shrink:0;
+}
+.dv-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.dv-name{flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dv-arrow{color:var(--muted);font-size:16px;flex-shrink:0;}
+.dv-check{
+  width:20px;height:20px;border-radius:50%;flex-shrink:0;
+  border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;
+}
+.dv-row.sel .dv-check{background:var(--mint);border-color:var(--mint);}
+.dv-check-icon{display:none;width:11px;height:11px;}
+.dv-row.sel .dv-check-icon{display:block;}
+.dv-bottom{
+  display:flex;align-items:center;gap:10px;padding:10px 14px calc(12px + var(--safe-bottom));
+  border-top:1px solid var(--divider);background:rgba(13,13,16,0.97);flex-shrink:0;
+}
+.dv-counter{font-size:12px;color:var(--muted);flex:1;}
+.dv-confirm-btn{
+  background:var(--mint);color:#071a10;border:none;border-radius:10px;
+  padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;
+}
+.dv-confirm-btn:disabled{opacity:0.25;cursor:default;}
 </style>
 </head>
 <body>
@@ -295,13 +350,25 @@ input[type=file]{display:none;}
   </div>
 </div>
 
-<script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
+<div class="drive-modal" id="drive-modal">
+  <div class="dv-header">
+    <button class="dv-nav-btn" id="dv-back-btn" onclick="driveGoBack()">‹ 戻る</button>
+    <span class="dv-path" id="dv-path">マイドライブ</span>
+    <button class="dv-close" onclick="closeDriveBrowser()">✕</button>
+  </div>
+  <div class="dv-list" id="dv-list"></div>
+  <div class="dv-bottom">
+    <span class="dv-counter" id="dv-counter">選択0件</span>
+    <button class="dv-confirm-btn" id="dv-confirm-btn" onclick="confirmDriveSelection()" disabled>追加</button>
+  </div>
+</div>
+
 <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" async defer></script>
 <script>
 
 const GOOGLE_CLIENT_ID = '915191077344-a2nb12sektqe2n8v0d67pd1hjuhteh3u.apps.googleusercontent.com';
 const GOOGLE_API_KEY = 'AIzaSyB6QyRYMzdlZhxIGf15p0K9i3WofLrUNyI';
-const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
 let images = [];
 let selected = [];
@@ -556,11 +623,13 @@ function toast(msg){
   toastTimer = setTimeout(() => el.classList.remove('on'), 1800);
 }
 
-/* ── GOOGLE DRIVE PICKER ── */
+/* ── GOOGLE DRIVE BROWSER ── */
 let tokenClient = null;
 let accessToken = null;
 let gisReady = false;
-let pickerReady = false;
+let driveStack = [];
+let driveCurrent = { id: 'root', name: 'マイドライブ' };
+let driveSelected = new Map();
 
 function gisLoaded(){
   tokenClient = google.accounts.oauth2.initTokenClient({
@@ -570,38 +639,107 @@ function gisLoaded(){
   });
   gisReady = true;
 }
-function gapiLoaded(){
-  gapi.load('picker', () => { pickerReady = true; });
-}
 
 function openDrivePicker(){
-  if(!gisReady || !pickerReady){ toast('読み込み中です。少し待って再度お試しください'); return; }
+  if(!gisReady){ toast('読み込み中です。少し待って再度お試しください'); return; }
   tokenClient.callback = (resp) => {
     if(resp.error){ toast('Google認証に失敗しました'); return; }
     accessToken = resp.access_token;
-    showDrivePicker();
+    driveStack = [];
+    driveCurrent = { id: 'root', name: 'マイドライブ' };
+    driveSelected.clear();
+    document.getElementById('drive-modal').classList.add('on');
+    loadDriveFolder();
   };
   tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
 }
 
-function showDrivePicker(){
-  const view = new google.picker.DocsView(google.picker.ViewId.DOCS_IMAGES)
-    .setIncludeFolders(true)
-    .setSelectFolderEnabled(false);
-  new google.picker.PickerBuilder()
-    .addView(view)
-    .setOAuthToken(accessToken)
-    .setDeveloperKey(GOOGLE_API_KEY)
-    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-    .setCallback(pickerCallback)
-    .build()
-    .setVisible(true);
+function closeDriveBrowser(){
+  document.getElementById('drive-modal').classList.remove('on');
 }
 
-async function pickerCallback(data){
-  if(data.action !== google.picker.Action.PICKED) return;
+function driveGoBack(){
+  if(!driveStack.length) return;
+  driveCurrent = driveStack.pop();
+  loadDriveFolder();
+}
+
+async function loadDriveFolder(){
+  document.getElementById('dv-path').textContent = driveCurrent.name;
+  document.getElementById('dv-back-btn').disabled = driveStack.length === 0;
+  const list = document.getElementById('dv-list');
+  list.innerHTML = '<div class="dv-loading">読み込み中...</div>';
+  try{
+    const q = encodeURIComponent(`'${driveCurrent.id}' in parents and trashed = false and (mimeType = 'application/vnd.google-apps.folder' or mimeType contains 'image/')`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType,thumbnailLink)&pageSize=200&orderBy=folder,name`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if(!res.ok) throw new Error('list failed');
+    const json = await res.json();
+    renderDriveList(json.files || []);
+  }catch(e){
+    list.innerHTML = '<div class="dv-loading">読み込みに失敗しました</div>';
+  }
+}
+
+function renderDriveList(items){
+  const list = document.getElementById('dv-list');
+  list.innerHTML = '';
+  if(!items.length){
+    list.innerHTML = '<div class="dv-loading">このフォルダは空です</div>';
+    return;
+  }
+  items.forEach(item => {
+    const isFolder = item.mimeType === 'application/vnd.google-apps.folder';
+    const row = document.createElement('div');
+    row.className = 'dv-row' + (!isFolder && driveSelected.has(item.id) ? ' sel' : '');
+    if(isFolder){
+      row.innerHTML = `<div class="dv-icon">📁</div><div class="dv-name">${item.name}</div><div class="dv-arrow">›</div>`;
+      row.addEventListener('click', () => {
+        driveStack.push(driveCurrent);
+        driveCurrent = { id: item.id, name: item.name };
+        loadDriveFolder();
+      });
+    } else {
+      row.innerHTML = `
+        <div class="dv-thumb"><img loading="lazy"></div>
+        <div class="dv-name">${item.name}</div>
+        <div class="dv-check"><svg class="dv-check-icon" viewBox="0 0 24 24" fill="none" stroke="#071a10" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      `;
+      row.addEventListener('click', () => {
+        if(driveSelected.has(item.id)){ driveSelected.delete(item.id); row.classList.remove('sel'); }
+        else { driveSelected.set(item.id, { id: item.id, name: item.name }); row.classList.add('sel'); }
+        updateDriveCounter();
+      });
+      if(item.thumbnailLink){
+        fetchDriveThumb(item.thumbnailLink).then(url => { if(url) row.querySelector('img').src = url; });
+      }
+    }
+    list.appendChild(row);
+  });
+  updateDriveCounter();
+}
+
+async function fetchDriveThumb(url){
+  try{
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!res.ok) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  }catch(e){ return null; }
+}
+
+function updateDriveCounter(){
+  const n = driveSelected.size;
+  document.getElementById('dv-counter').textContent = '選択' + n + '件';
+  document.getElementById('dv-confirm-btn').disabled = n === 0;
+}
+
+async function confirmDriveSelection(){
+  const docs = [...driveSelected.values()];
+  if(!docs.length) return;
+  closeDriveBrowser();
   toast('読み込み中...');
-  const docs = data.docs;
   const loaded = await Promise.all(docs.map(doc => fetchDriveFile(doc)));
   images.push(...loaded.filter(Boolean));
   render();

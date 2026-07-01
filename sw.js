@@ -1,4 +1,4 @@
-const CACHE = 'image-selector-v3';
+const CACHE = 'image-selector-v4';
 const ASSETS = [
   '.',
   'index.html',
